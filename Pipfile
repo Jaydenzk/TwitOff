@@ -7,6 +7,8 @@ verify_ssl = true
 
 [packages]
 flask = "*"
+psygopg2 = "*"
+psycopg = "*"
 
 [requires]
 python_version = "3.7"

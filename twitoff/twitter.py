@@ -1,7 +1,7 @@
 import basilica
 import tweepy
 from decouple import config
-from .models import db, Tweet, User
+from .models import DB, Tweet, User
 
 TWITTER_AUTH = tweepy.OAuthHandler(config('TWITTER_CONSUMER_KEY'),
 config('TWITTER_CONSUMER_SECRET'))
@@ -12,3 +12,45 @@ config('TWITTER_ACCESS_TOKEN_SECRET'))
 TWITTER = tweepy.API(TWITTER_AUTH)
 
 BASILICA = basilica.Connection(config('BASILICA_KEY'))
+
+def add_update_user(username):
+    '''Adds or updates a user & their tweets, error if not
+       Twitter user'''
+    try:
+        twitter_user = TWITTER.get_user(username)
+        db_user = (User.query.get(twitter_user.id) or
+                   User(id=twitter_user.id, name=username))
+        DB.session.add(db_user)
+
+        tweets = twitter_user.timeline(
+            count=200, exclude_replies=True, include_rts=False,
+            tweet_mode='extended', since_id=db_user.newest_tweet_id
+            )
+        if tweets:
+            db_user.newest_tweet_id = tweets[0].id
+
+        for tweet in tweets:
+            embedding = BASILICA.embed_sentence(tweet.full_text,
+                                                model='twitter')
+            db_tweet = Tweet(id=tweet.id, text=tweet.full_text[:300],
+                             embedding=embedding)
+            db_user.tweets.append(db_tweet)
+            DB.session.add(db_tweet)
+
+    except Exception as e:
+        print('Error processing {}: {}'.format(username, e))
+        raise e
+
+    else:
+        DB.session.commit()
+
+def add_users(users):
+    '''Add list os users.
+       May take a while (use this in repl)
+    '''
+    for user in users:
+        add_update_user(user)
+
+def update_all_users():
+    for user in User.query.all():
+        add_update_user(user.name)
